@@ -11,7 +11,7 @@ use axum::{
     response::IntoResponse,
 };
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
@@ -40,6 +40,13 @@ pub fn file_service_routes(state: AppState) -> ApiRouter {
 struct FileWrapper {
     /// The ID of the new file.
     id: Uuid,
+}
+
+/// Unfortunately, Aide requires a struct in the form below to properly display
+/// parameters in the OpenAPI json for path variables https://github.com/tamasfe/aide/issues/4
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct FileIdPath {
+    pub id: Uuid,
 }
 
 /// Axum service to handle file upload requests
@@ -72,15 +79,14 @@ use axum_macros::debug_handler;
 #[debug_handler]
 async fn download_file(
     // State(app): State<Arc<AppState>>,
-    // FIXME: harden extractor to only accept "*.filetype" or similar to prevent malicious client requests for "../../something.sh" and the like
-    Path(filename): Path<String>,
+    Path(filename): Path<FileIdPath>,
     headers: HeaderMap,
 ) -> Result<impl IntoApiResponse, AppError> {
     let range = headers.get("range").ok_or(
         AppError::new("Malformed file download request").with_status(StatusCode::NOT_ACCEPTABLE),
     )?;
 
-    let filepath = format!("{}/{}", "/tmp", filename); // FIXME: use app state to set a file store location on disc
+    let filepath = format!("{}/{}", "/tmp", filename.id); // FIXME: use app state to set a file store location on disc
     let mut file = match File::open(&filepath).await {
         Ok(file) => file,
         Err(_) => return Err(AppError::new("File not found").with_status(StatusCode::NOT_FOUND)),
@@ -109,7 +115,7 @@ async fn download_file(
                 (header::CONTENT_TYPE, "application/octet-stream".to_string()),
                 (
                     header::CONTENT_DISPOSITION,
-                    format!("attachment; filename=\"{}\"", filename),
+                    format!("attachment; filename=\"{}\"", filename.id),
                 ),
             ],
             buffer,
