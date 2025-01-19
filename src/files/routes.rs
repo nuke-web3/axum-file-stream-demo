@@ -40,6 +40,9 @@ pub fn file_service_routes(state: AppState) -> ApiRouter {
 struct FileWrapper {
     /// The ID of the new file.
     id: Uuid,
+    /// TODO: where to store size info or just read it on neeed?
+    /// want the size? https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Length
+    size: usize,
 }
 
 /// Unfortunately, Aide requires a struct in the form below to properly display
@@ -87,6 +90,12 @@ async fn download_file(
     )?;
 
     let filepath = format!("{}/{}", "/tmp", filename.id); // FIXME: use app state to set a file store location on disc
+
+    // FIXME: need to only load the bytes we need from disk to memory, not whole file
+    // Ideally get a page that is optimal for any client (is there one?) and/or web
+    // See https://github.com/tokio-rs/axum/discussions/1638
+    // https://lib.rs/crates/axum-streams
+    // how does axum handle a last packet failing? (not mid stream where it can be detected for sure)
     let mut file = match File::open(&filepath).await {
         Ok(file) => file,
         Err(_) => return Err(AppError::new("File not found").with_status(StatusCode::NOT_FOUND)),
@@ -94,7 +103,8 @@ async fn download_file(
 
     let file_size = file.metadata().await.unwrap().len();
     let range_str = range.to_str().unwrap();
-    // TODO: better way to ensure GET headers are correct and
+    // TODO: better way to ensure GET headers are correct and make RANGE optional!
+    // FIXME: remove all unwrap!
     if let Some(range) = range_str.strip_prefix("bytes=") {
         let (start, end) = range.split_once('-').unwrap();
         let start: u64 = start.parse().unwrap();
@@ -102,6 +112,7 @@ async fn download_file(
 
         file.seek(std::io::SeekFrom::Start(start)).await.unwrap();
         let mut buffer = vec![0; (end - start + 1) as usize];
+        // FIXME: need to handle out of bounds ranges
         file.read_exact(&mut buffer).await.unwrap();
 
         let mut response = (
