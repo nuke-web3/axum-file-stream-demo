@@ -9,7 +9,7 @@ use axum::{http::StatusCode, Extension};
 use docs::docs_routes;
 use errors::AppError;
 use extractors::Json;
-use files::routes::file_uploader_routes;
+use files::routes::file_service_routes;
 use state::AppState;
 use tokio::net::TcpListener;
 use uuid::Uuid;
@@ -33,7 +33,7 @@ async fn main() {
     let mut api = OpenApi::default();
 
     let app = ApiRouter::new()
-        .nest_api_service("/file", file_uploader_routes(state.clone()))
+        .nest_api_service("/file", file_service_routes(state.clone()))
         .nest_api_service("/docs", docs_routes(state.clone()))
         .finish_api_with(&mut api, api_docs)
         .layer(Extension(Arc::new(api))) // Arc is very important here or you will face massive memory and performance issues
